@@ -31,7 +31,7 @@ def process_pdfs():
 
 # 2. 설정 및 조교 교육
 st.set_page_config(page_title="영상문법기초 AI 조교", page_icon="🎬")
-st.title("🎬 영상문법기초 AI 조교 (시각 자료 지원)")
+st.subheader("🎬 영상문법기초 AI 조교")
 
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"].strip()
