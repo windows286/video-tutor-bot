@@ -3,6 +3,14 @@ import google.generativeai as genai
 import PyPDF2
 import glob
 
+# 진단용 코드: 사용할 수 있는 모델 목록을 화면에 출력합니다.
+try:
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            st.write(f"사용 가능한 모델: {m.name}")
+except Exception as e:
+    st.error(f"모델 목록을 가져오는 중 오류 발생: {e}")
+
 # 1. PDF 텍스트 추출 함수 (캐싱 적용으로 속도 향상)
 @st.cache_resource
 def load_all_pdfs():
