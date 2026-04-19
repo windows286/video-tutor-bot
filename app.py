@@ -1,80 +1,89 @@
 import streamlit as st
 import google.generativeai as genai
-import PyPDF2
+import fitz  # PyMuPDF
 import glob
+import os
 
-# 진단용 코드: 사용할 수 있는 모델 목록을 화면에 출력합니다.
-try:
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            st.write(f"사용 가능한 모델: {m.name}")
-except Exception as e:
-    st.error(f"모델 목록을 가져오는 중 오류 발생: {e}")
-
-# 1. PDF 텍스트 추출 함수 (캐싱 적용으로 속도 향상)
+# 1. PDF에서 텍스트 추출 및 페이지를 이미지로 변환 (캐싱)
 @st.cache_resource
-def load_all_pdfs():
+def process_pdfs():
     combined_text = ""
     pdf_files = glob.glob("*.pdf")
+    
+    # 이미지 저장용 폴더 생성
+    if not os.path.exists("temp_imgs"):
+        os.makedirs("temp_imgs")
+    
     for pdf_file in pdf_files:
-        try:
-            with open(pdf_file, "rb") as f:
-                reader = PyPDF2.PdfReader(f)
-                for page in reader.pages:
-                    content = page.extract_text()
-                    if content:
-                        combined_text += content
-        except Exception:
-            continue
-    # 텍스트가 너무 길면 API 오류가 날 수 있으므로 적절히 제한 (약 3만 자)
+        doc = fitz.open(pdf_file)
+        combined_text += f"\n\n[파일: {pdf_file}]\n"
+        
+        for page_num, page in enumerate(doc):
+            # 텍스트 추출 (조교가 페이지 번호를 알 수 있게 표기)
+            text = page.get_text()
+            combined_text += f"--- [페이지 {page_num + 1}] ---\n{text}\n"
+            
+            # 페이지를 이미지로 저장 (나중에 불러올 용도)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # 화질 2배
+            pix.save(f"temp_imgs/{pdf_file}_page_{page_num + 1}.png")
+            
     return combined_text[:30000]
 
-# 2. 웹페이지 기본 설정
+# 2. 설정 및 조교 교육
 st.set_page_config(page_title="영상문법기초 AI 조교", page_icon="🎬")
-st.title("🎬 영상문법기초 AI 조교")
-st.caption("영상문법기초 수업 내용에 궁금한 것을 편하게 물어보세요!")
+st.title("🎬 영상문법기초 AI 조교 (시각 자료 지원)")
 
-# 3. 제미나이 API 및 지식 베이스 설정
 try:
-    # Secrets에서 키 가져오기 (공백 주의!)
     API_KEY = st.secrets["GEMINI_API_KEY"].strip()
     genai.configure(api_key=API_KEY)
     
-    with st.spinner("강의 자료를 분석하고 있습니다..."):
-        all_knowledge = load_all_pdfs()
+    all_knowledge = process_pdfs()
     
-    if not all_knowledge.strip():
-        all_knowledge = "강의 자료 PDF 파일을 찾지 못했습니다. 일반적인 영상 제작 지식으로 답변해줘."
+    # 조교에게 페이지 번호를 반드시 언급하라고 강력하게 지시합니다.
+    system_instruction = f"""
+    너는 김철현 교수님의 영상 제작 수업 조교야. 
+    반드시 아래 제공된 [강의 자료]를 바탕으로 답해줘.
+    
+    **중요 지시**: 설명하는 내용이 특정 페이지에 있다면, 답변 끝에 반드시 "[페이지 번호]" 형식으로 적어줘.
+    예: "익스트림 롱숏은 장소를 제시하는 목적으로 쓰입니다. [페이지 45]"
+    
+    [강의 자료]
+    {all_knowledge}
+    """
 
-    # 모델 설정 (가장 안정적인 모델 이름으로 통일)
-    # 404 에러를 피하기 위해 이름 앞에 'models/'를 붙이지 않습니다.
     model = genai.GenerativeModel(
-        model_name="models/gemini-flash-latest", 
-        system_instruction=f"너는 김철현 교수님의 영상 제작 과목 전담 조교야. 아래 자료를 바탕으로 친절하게 답해줘: {all_knowledge}"
+        model_name="models/gemini-flash-latest",
+        system_instruction=system_instruction
     )
 except Exception as e:
-    st.error(f"설정 중 오류가 발생했습니다: {e}")
+    st.error(f"설정 에러: {e}")
     st.stop()
 
-# 4. 채팅 세션 초기화
+# 3. 채팅 로직
 if "chat_session" not in st.session_state:
     st.session_state["chat_session"] = model.start_chat(history=[])
 
-# 5. 기존 대화 내용 표시
 for message in st.session_state.chat_session.history:
     role = "assistant" if message.role == "model" else "user"
     with st.chat_message(role):
         st.markdown(message.parts[0].text)
 
-# 6. 사용자 질문 입력 및 답변 출력
-if prompt := st.chat_input("질문을 입력하세요 (예: 가장 기본 숏 3가지는 무엇인가요?)"):
+if prompt := st.chat_input("궁금한 것을 물어보세요!"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("조교가 답변을 작성하고 있습니다..."):
-            try:
-                response = st.session_state.chat_session.send_message(prompt)
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"답변 생성 중 오류가 발생했습니다. 상세 에러: {e}")
+        response = st.session_state.chat_session.send_message(prompt)
+        answer_text = response.text
+        st.markdown(answer_text)
+        
+        # 답변에서 [페이지 X] 형식을 찾아 해당 이미지 출력
+        import re
+        page_matches = re.findall(r"\[페이지 (\d+)\]", answer_text)
+        if page_matches:
+            for p_num in page_matches:
+                # 첫 번째 PDF 파일의 해당 페이지 이미지를 찾아서 표시
+                pdf_name = glob.glob("*.pdf")[0] # 첫 번째 PDF 기준
+                img_path = f"temp_imgs/{pdf_name}_page_{p_num}.png"
+                if os.path.exists(img_path):
+                    st.image(img_path, caption=f"강의 자료 {p_num}페이지 발췌")
