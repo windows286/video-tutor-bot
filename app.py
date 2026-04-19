@@ -5,7 +5,7 @@ import glob
 import os
 import re
 
-# 1. PDF 처리 (제한 해제 및 구분 강화)
+# 1. 수업용 PDF만 처리 (개인 교재 제외)
 @st.cache_resource
 def process_selected_pdfs():
     combined_text = ""
@@ -21,7 +21,6 @@ def process_selected_pdfs():
             doc = fitz.open(pdf_file)
             for page_num, page in enumerate(doc):
                 text = page.get_text()
-                # AI가 페이지 번호를 절대 놓치지 않도록 아주 명확하게 표시합니다.
                 combined_text += f"\n\n### [문서:{pdf_file} / 페이지:{page_num + 1}] ###\n{text}\n"
                 
                 img_path = f"temp_imgs/{pdf_file}_p{page_num + 1}.png"
@@ -30,18 +29,34 @@ def process_selected_pdfs():
                     pix.save(img_path)
         except Exception as e:
             st.error(f"오류: {e}")
-            
-    # 글자 수 제한을 50만 자로 대폭 늘려 모든 교재를 다 읽게 합니다.
     return combined_text[:500000]
 
-# 2. 메인 화면 및 사이드바 (기존과 동일)
+# 2. 메인 화면 구성 및 사이드바 (질문 기록 클릭 기능 유지)
 st.markdown("### 🎬 영상문법기초 AI 조교")
+
 if "selected_question_idx" not in st.session_state:
     st.session_state["selected_question_idx"] = None
 
-# (사이드바 로직 생략 - 기존 코드 유지 가능)
+with st.sidebar:
+    st.markdown("### 📂 질문 기록")
+    if "chat_session" in st.session_state:
+        history = st.session_state.chat_session.history
+        user_indices = [i for i, m in enumerate(history) if m.role == "user"]
+        if user_indices:
+            for i in reversed(user_indices):
+                q_text = re.sub(r"\[출처:.*?/ \d+페이지\]", "", history[i].parts[0].text).strip()
+                short_q = q_text[:15] + "..." if len(q_text) > 15 else q_text
+                if st.button(short_q, key=f"q_btn_{i}", use_container_width=True):
+                    st.session_state["selected_question_idx"] = i
+        else:
+            st.caption("새 대화를 시작해보세요.")
+    
+    if st.session_state["selected_question_idx"] is not None:
+        if st.sidebar.button("🗑️ 현재 대화로 돌아가기"):
+            st.session_state["selected_question_idx"] = None
+            st.rerun()
 
-# 3. AI 설정 (지시문 대폭 강화)
+# 3. AI 설정 (지시문: 본문 출처 금지 명령)
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"].strip()
     genai.configure(api_key=API_KEY)
@@ -49,13 +64,14 @@ try:
     
     system_instruction = f"""
     너는 김철현 교수님의 영상 제작 수업 조교야. 
-    학생들의 질문에 답할 때, 각 개념(숏의 종류 등)이 설명될 때마다 반드시 그 직후에 출처를 적어줘.
-    
+    학생의 질문에 친절히 답하되, 아래 규칙을 반드시 지켜줘.
+
     [규칙]
-    1. 답변 본문에 각 항목마다 '[출처: 파일명 / X페이지]'를 반드시 포함해.
-    2. 설명하는 내용과 그림이 일치해야 해. 엉뚱한 페이지를 적지 마.
-    3. 예: "미디엄 숏은 허리 위를 찍습니다. [출처: 기초이론1.pdf / 35페이지]"
-    
+    1. **절대로 답변 본문 중간에는 출처나 페이지 번호를 적지 마.**
+    2. 답변이 모두 끝난 후, **맨 마지막 줄에만** 참고한 모든 페이지를 아래 형식으로 몰아서 한 번씩 적어줘.
+       형식: [출처: 파일명 / X페이지] [출처: 파일명 / Y페이지]
+    3. 제공된 [수업 자료]의 내용만 사용해.
+
     [수업 자료]
     {all_knowledge}
     """
@@ -68,35 +84,42 @@ except Exception as e:
     st.error(f"설정 에러: {e}")
     st.stop()
 
-# 4. 메시지 출력 함수 (텍스트 숨김 및 이미지 다중 출력)
+# 4. 출력 함수 (본문 정화 및 하단 이미지 출력)
 def display_clean_message(role, raw_text):
     with st.chat_message(role):
-        # 출처 텍스트 모두 추출
+        # 출처 정보 추출 (이미지 표시용)
         matches = re.findall(r"\[출처:\s*(.*?)\s*/\s*(\d+)페이지\]", raw_text)
-        # 화면에는 텍스트 숨기기
+        # 본문에서 출처 텍스트 제거 (학생용 화면)
         cleaned_text = re.sub(r"\[출처:.*?/ \d+페이지\]", "", raw_text).strip()
+        
         st.markdown(cleaned_text)
         
-        # 각 출처에 맞는 모든 이미지를 순서대로 출력
         if role == "assistant" and matches:
-            # 중복 제거하되 순서는 유지
+            # 중복 제거 후 이미지 출력
             seen = set()
             unique_matches = [x for x in matches if not (x in seen or seen.add(x))]
-            
             for file_name, p_num in unique_matches:
                 img_path = f"temp_imgs/{file_name}_p{p_num}.png"
                 if os.path.exists(img_path):
-                    st.image(img_path, caption=f"강의 자료 발췌: {file_name} ({p_num}p)")
+                    st.image(img_path, caption=f"수업 자료 발췌: {file_name} ({p_num}p)")
 
-# (이하 대화 표시 및 입력 로직 기존과 동일하게 연결)
-# 5. 기존 대화 및 새 질문 처리
+# 5. 대화 표시 로직
 if "chat_session" not in st.session_state:
     st.session_state["chat_session"] = model.start_chat(history=[])
+
+if st.session_state["selected_question_idx"] is not None:
+    idx = st.session_state["selected_question_idx"]
+    history = st.session_state.chat_session.history
+    st.info("📍 선택하신 과거 질문 내용입니다.")
+    display_clean_message("user", history[idx].parts[0].text)
+    display_clean_message("assistant", history[idx + 1].parts[0].text)
+    st.divider()
 
 for message in st.session_state.chat_session.history:
     display_clean_message("assistant" if message.role == "model" else "user", message.parts[0].text)
 
-if prompt := st.chat_input("질문을 입력하세요!"):
+if prompt := st.chat_input("궁금한 것을 물어보세요!"):
+    st.session_state["selected_question_idx"] = None
     display_clean_message("user", prompt)
     response = st.session_state.chat_session.send_message(prompt)
     display_clean_message("assistant", response.text)
