@@ -32,6 +32,9 @@ genai.configure(api_key=API_KEY)
 # 3. 모든 PDF 지식 베이스 로드
 with st.spinner("지식 베이스를 구축하고 있습니다. 잠시만 기다려 주세요..."):
     all_knowledge = load_all_pdfs()
+    # 지식 베이스가 비어있을 경우를 대비한 기본 문구 추가
+if not all_knowledge.strip():
+    all_knowledge = "강의 자료를 불러오지 못했습니다. 일반적인 영상 제작 지식으로 답변해줘."
 
 # 4. AI 모델 설정 (지시문에 모든 텍스트 포함)
 system_instruction = f"""
@@ -45,7 +48,7 @@ system_instruction = f"""
 """
 
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
+    model_name="models/gemini-1.5-flash",
     system_instruction=system_instruction
 )
 
