@@ -41,7 +41,7 @@ try:
     # 모델 설정 (가장 안정적인 모델 이름으로 통일)
     # 404 에러를 피하기 위해 이름 앞에 'models/'를 붙이지 않습니다.
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash", 
+        model_name="gemini-1.5-flash-latest", 
         system_instruction=f"너는 김철현 교수님의 영상 제작 과목 전담 조교야. 아래 자료를 바탕으로 친절하게 답해줘: {all_knowledge}"
     )
 except Exception as e:
