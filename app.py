@@ -63,7 +63,7 @@ for message in st.session_state.chat_session.history:
         st.markdown(message.parts[0].text)
 
 # 6. 사용자 질문 입력 및 답변 출력
-if prompt := st.chat_input("질문을 입력하세요 (예: 프리미어에서 컷 편집 단축키가 뭐야?)"):
+if prompt := st.chat_input("질문을 입력하세요 (예: 가장 기본 숏 3가지는 무엇인가요?)"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
