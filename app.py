@@ -96,3 +96,22 @@ if prompt := st.chat_input("어떤 내용이 궁금하신가요?"):
                 else:
                     # 혹시 파일명이 미묘하게 다를 경우를 대비한 검색
                     st.warning(f"참조된 이미지({file_name}, {p_num}p)를 찾는 중입니다...")
+
+# --- 왼쪽 사이드바: 질문 목록 리스트 ---
+with st.sidebar:
+    st.markdown("### 📂 질문 기록")
+    st.divider() # 가로 줄 하나 긋기
+    
+    if "chat_session" in st.session_state:
+        # 대화 기록 중 사용자가 질문한 내용만 추출
+        questions = [m.parts[0].text for m in st.session_state.chat_session.history if m.role == "user"]
+        
+        if not questions:
+            st.caption("아직 질문 기록이 없습니다.")
+        else:
+            # 최근 질문이 위로 오게 하려면 reversed(questions)를 사용하세요.
+            for i, q in enumerate(questions):
+                # 질문이 너무 길면 잘라서 표시 (20자 제한)
+                short_q = q[:20] + "..." if len(q) > 20 else q
+                st.write(f"{i+1}. {short_q}")
+# -----------------------------------
