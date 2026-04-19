@@ -109,3 +109,34 @@ def display_clean_message(role, raw_text):
         cleaned_text = re.sub(r"\[출처:.*?/ \d+페이지\]", "", raw_text).strip()
         
         st.markdown(cleaned_text)
+        
+        # 3. 그림 출력 (중복 제거)
+        if role == "assistant" and matches:
+            for file_name, p_num in list(set(matches)):
+                img_path = f"temp_imgs/{file_name}_p{p_num}.png"
+                if os.path.exists(img_path):
+                    st.image(img_path, caption=f"수업 자료 발췌: {file_name}")
+
+# 과거 질문 선택 시 상단 표시
+if st.session_state["selected_question_idx"] is not None:
+    idx = st.session_state["selected_question_idx"]
+    history = st.session_state.chat_session.history
+    st.info("📍 선택하신 과거 질문 내용입니다.")
+    display_clean_message("user", history[idx].parts[0].text)
+    display_clean_message("assistant", history[idx + 1].parts[0].text)
+    st.divider()
+
+# 전체 대화 내역 표시
+for message in st.session_state.chat_session.history:
+    role = "assistant" if message.role == "model" else "user"
+    display_clean_message(role, message.parts[0].text)
+
+# 6. 새 질문 입력 처리
+if prompt := st.chat_input("수업 내용 중 궁금한 것을 물어보세요!"):
+    st.session_state["selected_question_idx"] = None
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        response = st.session_state.chat_session.send_message(prompt)
+        display_clean_message("assistant", response.text)
